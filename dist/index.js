@@ -1,50 +1,40 @@
-import { exec } from 'child_process';
-import express from 'express';
-import fs from 'fs';
-import multer from 'multer';
-import path from 'path';
-
-// 扩展Express的Request类型
-declare global {
-  namespace Express {
-    interface Request {
-      file?: Multer.File;
-    }
-  }
-}
-
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const child_process_1 = require("child_process");
+const express_1 = __importDefault(require("express"));
+const fs_1 = __importDefault(require("fs"));
+const multer_1 = __importDefault(require("multer"));
+const path_1 = __importDefault(require("path"));
 // 创建 Express 应用
-const app = express();
+const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
-
 // 配置文件上传
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../uploads');
-    // 确保上传目录存在
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+const storage = multer_1.default.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = path_1.default.join(__dirname, '../uploads');
+        // 确保上传目录存在
+        if (!fs_1.default.existsSync(uploadDir)) {
+            fs_1.default.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname}`);
     }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  }
 });
-
-const upload = multer({ storage });
-
+const upload = (0, multer_1.default)({ storage });
 // 中间件设置
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, '../public')));
-
+app.use(express_1.default.json());
+app.use(express_1.default.urlencoded({ extended: true }));
+app.use(express_1.default.static(path_1.default.join(__dirname, '../public')));
 // 确保public目录存在
-const publicDir = path.join(__dirname, '../public');
-if (!fs.existsSync(publicDir)) {
-  fs.mkdirSync(publicDir, { recursive: true });
+const publicDir = path_1.default.join(__dirname, '../public');
+if (!fs_1.default.existsSync(publicDir)) {
+    fs_1.default.mkdirSync(publicDir, { recursive: true });
 }
-
 // 创建HTML页面
 const htmlContent = `
 <!DOCTYPE html>
@@ -193,92 +183,78 @@ const htmlContent = `
 </body>
 </html>
 `;
-
 // 写入HTML文件
-fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent);
-
+fs_1.default.writeFileSync(path_1.default.join(publicDir, 'index.html'), htmlContent);
 // 路由定义
-
 // 语音转文本路由
-(app as any).post('/transcribe', upload.single('audio'), (req: any, res: any) => {
-  if (!req.file) {
-    return res.status(400).json({ error: '未提供音频文件' });
-  }
-
-  const audioFilePath = req.file.path;
-  const language = req.body.language || 'zh'; // 默认中文
-  const model = req.body.model || 'large'; // 默认使用large模型
-
-  // 构建Whisper命令
-  const command = `whisper "${audioFilePath}" --language ${language} --fp16 False --model ${model} --output_dir ./uploads --output_format txt`;
-
-  console.log(`执行命令: ${command}`);
-
-  // 执行Whisper命令
-  exec(command, (error, stdout, stderr) => {
-    console.log(`执行Whisper命令`,{stdout, stderr, error});
-    
-    if (error) {
-      console.error(`执行出错: ${error.message}`);
-      return res.status(500).json({ error: '转录处理失败', details: error.message });
+app.post('/transcribe', upload.single('audio'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: '未提供音频文件' });
     }
-    
-    if (stderr) {
-      console.error(`stderr: ${stderr}`);
-    }
-
-    // 获取生成的文本文件路径（Whisper默认输出与音频同名的.txt文件）
-    const txtFilePath = audioFilePath.replace(/\.[^/.]+$/, '.txt');
-    
-    try {
-      // 读取转录结果
-      if (fs.existsSync(txtFilePath)) {
-        const transcription = fs.readFileSync(txtFilePath, 'utf8');
-        res.json({ 
-          success: true, 
-          transcription,
-          audioFile: path.basename(audioFilePath),
-          outputFile: path.basename(txtFilePath)
-        });
-      } else {
-        res.status(404).json({ 
-          error: '转录文件未找到',
-          command,
-          stdout
-        });
-      }
-    } catch (readError: unknown) {
-      const errorMessage = readError instanceof Error ? readError.message : String(readError);
-      res.status(500).json({ 
-        error: '读取转录结果失败', 
-        details: errorMessage 
-      });
-    }
-  });
+    const audioFilePath = req.file.path;
+    const language = req.body.language || 'zh'; // 默认中文
+    const model = req.body.model || 'large'; // 默认使用large模型
+    // 构建Whisper命令
+    const command = `whisper "${audioFilePath}" --language ${language} --fp16 False --model ${model}`;
+    console.log(`执行命令: ${command}`);
+    // 执行Whisper命令
+    (0, child_process_1.exec)(command, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`执行出错: ${error.message}`);
+            return res.status(500).json({ error: '转录处理失败', details: error.message });
+        }
+        if (stderr) {
+            console.error(`stderr: ${stderr}`);
+        }
+        // 获取生成的文本文件路径（Whisper默认输出与音频同名的.txt文件）
+        const txtFilePath = audioFilePath.replace(/\.[^/.]+$/, '.txt');
+        try {
+            // 读取转录结果
+            if (fs_1.default.existsSync(txtFilePath)) {
+                const transcription = fs_1.default.readFileSync(txtFilePath, 'utf8');
+                res.json({
+                    success: true,
+                    transcription,
+                    audioFile: path_1.default.basename(audioFilePath),
+                    outputFile: path_1.default.basename(txtFilePath)
+                });
+            }
+            else {
+                res.status(404).json({
+                    error: '转录文件未找到',
+                    command,
+                    stdout
+                });
+            }
+        }
+        catch (readError) {
+            const errorMessage = readError instanceof Error ? readError.message : String(readError);
+            res.status(500).json({
+                error: '读取转录结果失败',
+                details: errorMessage
+            });
+        }
+    });
 });
-
 // 首页路由
 app.get('/', (req, res) => {
-  res.sendFile(path.join(publicDir, 'index.html'));
+    res.sendFile(path_1.default.join(publicDir, 'index.html'));
 });
-
 // 用户路由
 app.get('/users', (req, res) => {
-  res.json([
-    { id: 1, name: '张三' },
-    { id: 2, name: '李四' },
-    { id: 3, name: '王五' }
-  ]);
+    res.json([
+        { id: 1, name: '张三' },
+        { id: 2, name: '李四' },
+        { id: 3, name: '王五' }
+    ]);
 });
-
 // 获取单个用户信息
 app.get('/users/:id', (req, res) => {
-  const userId = req.params.id;
-  res.json({ id: userId, name: `用户${userId}` });
+    const userId = req.params.id;
+    res.json({ id: userId, name: `用户${userId}` });
 });
-
 // 启动服务器
 app.listen(port, () => {
-  console.log(`服务器运行在 http://localhost:${port}`);
-  console.log(`请访问 http://localhost:${port} 使用语音转文本功能`);
-}); 
+    console.log(`服务器运行在 http://localhost:${port}`);
+    console.log(`请访问 http://localhost:${port} 使用语音转文本功能`);
+});

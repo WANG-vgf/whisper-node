@@ -2,6 +2,7 @@ import { exec } from 'child_process';
 import express from 'express';
 import fs from 'fs';
 import multer from 'multer';
+import fetch from 'node-fetch';
 import path from 'path';
 
 // 扩展Express的Request类型
@@ -79,7 +80,7 @@ const htmlContent = `
       margin-bottom: 5px;
       font-weight: bold;
     }
-    select, input[type="file"] {
+    select, input[type="file"], input[type="text"] {
       width: 100%;
       padding: 8px;
       border: 1px solid #ddd;
@@ -114,6 +115,25 @@ const htmlContent = `
       color: #d9534f;
       font-weight: bold;
     }
+    .translation-section {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #eee;
+    }
+    .advanced-options {
+      margin-top: 15px;
+      padding: 10px;
+      border: 1px dashed #ddd;
+      border-radius: 4px;
+      background-color: #f5f5f5;
+    }
+    .advanced-toggle {
+      color: #0275d8;
+      cursor: pointer;
+      text-decoration: underline;
+      margin-bottom: 10px;
+      display: inline-block;
+    }
   </style>
 </head>
 <body>
@@ -121,11 +141,11 @@ const htmlContent = `
   <div class="container">
     <form id="uploadForm" enctype="multipart/form-data">
       <div class="form-group">
-        <label for="audio">选择音频文件:</label>
-        <input type="file" id="audio" name="audio" accept="audio/*" required>
+        <label for="file">选择音频文件:</label>
+        <input type="file" id="file" name="file" accept="audio/*" required>
       </div>
       <div class="form-group">
-        <label for="language">语言:</label>
+        <label for="language">音频语言:</label>
         <select id="language" name="language">
           <option value="zh">中文</option>
           <option value="en">英文</option>
@@ -140,6 +160,32 @@ const htmlContent = `
           <option value="small">小型模型 (最快)</option>
         </select>
       </div>
+      
+      <div class="form-group">
+        <label for="translateTo">翻译为:</label>
+        <select id="translateTo" name="translateTo">
+          <option value="en">英文</option>
+          <option value="zh">中文</option>
+          <option value="es">西班牙语</option>
+          <option value="fr">法语</option>
+          <option value="de">德语</option>
+          <option value="ru">俄语</option>
+          <option value="ja">日语</option>
+          <option value="ko">韩语</option>
+        </select>
+      </div>
+      
+      <div class="advanced-options" style="display: none;">
+        <div class="form-group">
+          <label for="translateApiUrl">翻译API地址 (可选):</label>
+          <input type="text" id="translateApiUrl" name="translateApiUrl" placeholder="https://libretranslate.com/translate">
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <span class="advanced-toggle" id="advancedToggle">显示高级选项</span>
+      </div>
+      
       <button type="submit">开始转录</button>
     </form>
     
@@ -153,6 +199,14 @@ const htmlContent = `
   </div>
 
   <script>
+    // 高级选项切换
+    document.getElementById('advancedToggle').addEventListener('click', function() {
+      const advancedOptions = document.querySelector('.advanced-options');
+      const isHidden = advancedOptions.style.display === 'none';
+      advancedOptions.style.display = isHidden ? 'block' : 'none';
+      this.textContent = isHidden ? '隐藏高级选项' : '显示高级选项';
+    });
+  
     document.getElementById('uploadForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       
@@ -176,7 +230,17 @@ const htmlContent = `
         loadingDiv.style.display = 'none';
         
         if (data.success) {
-          resultDiv.innerHTML = '<h3>转录结果:</h3><p>' + data.transcription + '</p>';
+          let resultHtml = '<h3>转录结果:</h3><p>' + data.transcription + '</p>';
+          
+          // 如果有翻译结果，显示翻译部分
+          if (data.translatedText) {
+            resultHtml += '<div class="translation-section">';
+            resultHtml += '<h3>翻译结果:</h3>';
+            resultHtml += '<p>' + data.translatedText + '</p>';
+            resultHtml += '</div>';
+          }
+          
+          resultDiv.innerHTML = resultHtml;
         } else {
           resultDiv.innerHTML = '<p class="error">错误: ' + (data.error || '未知错误') + '</p>';
           if (data.details) {
@@ -197,10 +261,52 @@ const htmlContent = `
 // 写入HTML文件
 fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent);
 
+/**
+ * 翻译文本函数
+ * @param text 要翻译的文本
+ * @param sourceLanguage 源语言代码
+ * @param targetLanguage 目标语言代码
+ * @param apiUrl 翻译API的URL
+ * @returns 翻译后的文本
+ */
+async function translateText(
+  text: string, 
+  sourceLanguage: string = 'zh', 
+  targetLanguage: string = 'en',
+  apiUrl: string = 'http://127.0.0.1:5000/translate'
+): Promise<string> {
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        q: text,
+        source: sourceLanguage,
+        target: targetLanguage,
+        format: 'text',
+        alternatives: 3,
+        api_key: ''
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`翻译请求失败: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json() as { translatedText: string };
+    return data.translatedText;
+  } catch (error) {
+    console.error('翻译出错:', error);
+    throw error;
+  }
+}
+
 // 路由定义
 
 // 语音转文本路由
-(app as any).post('/transcribe', upload.single('audio'), (req: any, res: any) => {
+(app as any).post('/transcribe', upload.single('file'), async (req: any, res: any) => {
   if (!req.file) {
     return res.status(400).json({ error: '未提供音频文件' });
   }
@@ -208,6 +314,10 @@ fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent);
   const audioFilePath = req.file.path;
   const language = req.body.language || 'zh'; // 默认中文
   const model = req.body.model || 'large'; // 默认使用large模型
+  
+  // 翻译相关参数
+  const translateToLanguage = req.body.translateTo || 'en'; // 默认翻译为英文
+  const translateApiUrl = req.body.translateApiUrl || 'http://127.0.0.1:5000/translate'; // 使用本地翻译API
 
   // 构建Whisper命令
   const command = `whisper "${audioFilePath}" --language ${language} --fp16 False --output_dir ./uploads --output_format txt`;
@@ -215,7 +325,7 @@ fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent);
   console.log(`执行命令: ${command}`);
 
   // 执行Whisper命令
-  exec(command, (error, stdout, stderr) => {
+  exec(command, async (error, stdout, stderr) => {
     console.log(`执行Whisper命令`,{stdout, stderr, error});
     
     if (error) {
@@ -234,9 +344,25 @@ fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent);
       // 读取转录结果
       if (fs.existsSync(txtFilePath)) {
         const transcription = fs.readFileSync(txtFilePath, 'utf8');
+        
+        // 翻译转录文本
+        let translatedText = '';
+        try {
+          translatedText = await translateText(
+            transcription,
+            language,
+            translateToLanguage,
+            translateApiUrl
+          );
+        } catch (translateError) {
+          console.error('翻译失败:', translateError);
+          // 翻译失败不影响整体流程，只是没有翻译结果
+        }
+        
         res.json({ 
           success: true, 
           transcription,
+          translatedText, // 添加翻译后的文本
           audioFile: path.basename(audioFilePath),
           outputFile: path.basename(txtFilePath)
         });

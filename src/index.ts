@@ -210,7 +210,7 @@ fs.writeFileSync(path.join(publicDir, 'index.html'), htmlContent);
   const model = req.body.model || 'large'; // 默认使用large模型
 
   // 构建Whisper命令
-  const command = `whisper "${audioFilePath}" --language ${language} --fp16 False --model ${model} --output_dir ./uploads --output_format txt`;
+  const command = `whisper "${audioFilePath}" --language ${language} --fp16 False --output_dir ./uploads --output_format txt`;
 
   console.log(`执行命令: ${command}`);
 
@@ -279,6 +279,5 @@ app.get('/users/:id', (req, res) => {
 
 // 启动服务器
 app.listen(port, () => {
-  console.log(`服务器运行在 http://localhost:${port}`);
   console.log(`请访问 http://localhost:${port} 使用语音转文本功能`);
 }); 

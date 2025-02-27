@@ -8,6 +8,7 @@ const express_1 = __importDefault(require("express"));
 const fs_1 = __importDefault(require("fs"));
 const multer_1 = __importDefault(require("multer"));
 const node_fetch_1 = __importDefault(require("node-fetch"));
+const ollama_1 = __importDefault(require("ollama"));
 const path_1 = __importDefault(require("path"));
 // 创建 Express 应用
 const app = (0, express_1.default)();
@@ -36,219 +37,6 @@ const publicDir = path_1.default.join(__dirname, '../public');
 if (!fs_1.default.existsSync(publicDir)) {
     fs_1.default.mkdirSync(publicDir, { recursive: true });
 }
-// 创建HTML页面
-const htmlContent = `
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Whisper语音转文本</title>
-  <style>
-    body {
-      font-family: 'Arial', sans-serif;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-      line-height: 1.6;
-    }
-    h1 {
-      color: #333;
-      text-align: center;
-    }
-    .container {
-      background-color: #f9f9f9;
-      border-radius: 8px;
-      padding: 20px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .form-group {
-      margin-bottom: 15px;
-    }
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-    }
-    select, input[type="file"], input[type="text"] {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      box-sizing: border-box;
-    }
-    button {
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      padding: 10px 15px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 16px;
-    }
-    button:hover {
-      background-color: #45a049;
-    }
-    #result {
-      margin-top: 20px;
-      padding: 15px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background-color: #fff;
-      min-height: 100px;
-    }
-    .loading {
-      text-align: center;
-      display: none;
-    }
-    .error {
-      color: #d9534f;
-      font-weight: bold;
-    }
-    .translation-section {
-      margin-top: 15px;
-      padding-top: 15px;
-      border-top: 1px solid #eee;
-    }
-    .advanced-options {
-      margin-top: 15px;
-      padding: 10px;
-      border: 1px dashed #ddd;
-      border-radius: 4px;
-      background-color: #f5f5f5;
-    }
-    .advanced-toggle {
-      color: #0275d8;
-      cursor: pointer;
-      text-decoration: underline;
-      margin-bottom: 10px;
-      display: inline-block;
-    }
-  </style>
-</head>
-<body>
-  <h1>Whisper语音转文本</h1>
-  <div class="container">
-    <form id="uploadForm" enctype="multipart/form-data">
-      <div class="form-group">
-        <label for="file">选择音频文件:</label>
-        <input type="file" id="file" name="file" accept="audio/*" required>
-      </div>
-      <div class="form-group">
-        <label for="language">音频语言:</label>
-        <select id="language" name="language">
-          <option value="zh">中文</option>
-          <option value="en">英文</option>
-          <option value="auto">自动检测</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label for="model">模型:</label>
-        <select id="model" name="model">
-          <option value="large">大型模型 (最准确)</option>
-          <option value="medium">中型模型</option>
-          <option value="small">小型模型 (最快)</option>
-        </select>
-      </div>
-      
-      <div class="form-group">
-        <label for="translateTo">翻译为:</label>
-        <select id="translateTo" name="translateTo">
-          <option value="en">英文</option>
-          <option value="zh">中文</option>
-          <option value="es">西班牙语</option>
-          <option value="fr">法语</option>
-          <option value="de">德语</option>
-          <option value="ru">俄语</option>
-          <option value="ja">日语</option>
-          <option value="ko">韩语</option>
-        </select>
-      </div>
-      
-      <div class="advanced-options" style="display: none;">
-        <div class="form-group">
-          <label for="translateApiUrl">翻译API地址 (可选):</label>
-          <input type="text" id="translateApiUrl" name="translateApiUrl" placeholder="https://libretranslate.com/translate">
-        </div>
-      </div>
-      
-      <div class="form-group">
-        <span class="advanced-toggle" id="advancedToggle">显示高级选项</span>
-      </div>
-      
-      <button type="submit">开始转录</button>
-    </form>
-    
-    <div class="loading" id="loading">
-      <p>正在处理，请稍候...</p>
-    </div>
-    
-    <div id="result">
-      <p>转录结果将显示在这里...</p>
-    </div>
-  </div>
-
-  <script>
-    // 高级选项切换
-    document.getElementById('advancedToggle').addEventListener('click', function() {
-      const advancedOptions = document.querySelector('.advanced-options');
-      const isHidden = advancedOptions.style.display === 'none';
-      advancedOptions.style.display = isHidden ? 'block' : 'none';
-      this.textContent = isHidden ? '隐藏高级选项' : '显示高级选项';
-    });
-  
-    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      
-      const formData = new FormData(this);
-      const resultDiv = document.getElementById('result');
-      const loadingDiv = document.getElementById('loading');
-      
-      // 显示加载状态
-      loadingDiv.style.display = 'block';
-      resultDiv.innerHTML = '<p>正在处理，请稍候...</p>';
-      
-      try {
-        const response = await fetch('/transcribe', {
-          method: 'POST',
-          body: formData
-        });
-        
-        const data = await response.json();
-        
-        // 隐藏加载状态
-        loadingDiv.style.display = 'none';
-        
-        if (data.success) {
-          let resultHtml = '<h3>转录结果:</h3><p>' + data.transcription + '</p>';
-          
-          // 如果有翻译结果，显示翻译部分
-          if (data.translatedText) {
-            resultHtml += '<div class="translation-section">';
-            resultHtml += '<h3>翻译结果:</h3>';
-            resultHtml += '<p>' + data.translatedText + '</p>';
-            resultHtml += '</div>';
-          }
-          
-          resultDiv.innerHTML = resultHtml;
-        } else {
-          resultDiv.innerHTML = '<p class="error">错误: ' + (data.error || '未知错误') + '</p>';
-          if (data.details) {
-            resultDiv.innerHTML += '<p>' + data.details + '</p>';
-          }
-        }
-      } catch (error) {
-        // 隐藏加载状态
-        loadingDiv.style.display = 'none';
-        resultDiv.innerHTML = '<p class="error">请求失败: ' + error.message + '</p>';
-      }
-    });
-  </script>
-</body>
-</html>
-`;
-// 写入HTML文件
-fs_1.default.writeFileSync(path_1.default.join(publicDir, 'index.html'), htmlContent);
 /**
  * 翻译文本函数
  * @param text 要翻译的文本
@@ -285,6 +73,22 @@ async function translateText(text, sourceLanguage = 'zh', targetLanguage = 'en',
     }
 }
 // 路由定义
+// 优化/model路由
+app.post('/model', async (req, res) => {
+    const message = req.body.message || '你是谁？'; // 从请求中获取消息
+    const response = await ollama_1.default.chat({ model: 'deepseek-r1:14b', messages: [{ role: 'user', content: message }], stream: true });
+    // 流式返回内容
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    for await (const part of response) {
+        // 发送每个部分
+        res.write(`data: ${part.message.content}\n\n`);
+    }
+    // 结束流
+    res.write('event: end\n\n');
+    res.end();
+});
 // 语音转文本路由
 app.post('/transcribe', upload.single('file'), async (req, res) => {
     if (!req.file) {
@@ -304,7 +108,9 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
         console.log(`执行Whisper命令`, { stdout, stderr, error });
         if (error) {
             console.error(`执行出错: ${error.message}`);
-            return res.status(500).json({ error: '转录处理失败', details: error.message });
+            return res.status(500)
+                .set('Content-Type', 'application/json; charset=utf-8')
+                .json({ error: '转录处理失败', details: error.message });
         }
         if (stderr) {
             console.error(`stderr: ${stderr}`);
@@ -333,7 +139,9 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
                 });
             }
             else {
-                res.status(404).json({
+                res.status(404)
+                    .set('Content-Type', 'application/json; charset=utf-8')
+                    .json({
                     error: '转录文件未找到',
                     command,
                     stdout
@@ -342,7 +150,9 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
         }
         catch (readError) {
             const errorMessage = readError instanceof Error ? readError.message : String(readError);
-            res.status(500).json({
+            res.status(500)
+                .set('Content-Type', 'application/json; charset=utf-8')
+                .json({
                 error: '读取转录结果失败',
                 details: errorMessage
             });
@@ -351,7 +161,7 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
 });
 // 首页路由
 app.get('/', (req, res) => {
-    res.sendFile(path_1.default.join(publicDir, 'index.html'));
+    res.send('欢迎访问 Express 服务器！');
 });
 // 用户路由
 app.get('/users', (req, res) => {
@@ -368,5 +178,5 @@ app.get('/users/:id', (req, res) => {
 });
 // 启动服务器
 app.listen(port, () => {
-    console.log(`请访问 http://localhost:${port} 使用语音转文本功能`);
+    console.log(`服务器运行在 http://localhost:${port}`);
 });

@@ -1,4 +1,5 @@
 import { exec } from 'child_process';
+import ollama from 'ollama'
 import express from 'express';
 import fs from 'fs';
 import multer from 'multer';
@@ -351,7 +352,7 @@ async function translateText(
           translatedText = await translateText(
             transcription,
             language,
-            translateToLanguage,
+            'th',
             translateApiUrl
           );
         } catch (translateError) {
@@ -381,6 +382,14 @@ async function translateText(
       });
     }
   });
+});
+
+app.get('/model', async (req, res) => {
+  const message = { role: 'user', content: '你是谁？' }
+  const response = await ollama.chat({ model: 'deepseek-r1:14b', messages: [message], stream: true })
+  for await (const part of response) {
+    process.stdout.write(part.message.content)
+  }
 });
 
 // 首页路由

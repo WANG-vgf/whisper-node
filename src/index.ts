@@ -89,6 +89,39 @@ async function translateText(
   }
 }
 
+/**
+ * 多语言翻译函数
+ * @param text 要翻译的文本
+ * @param sourceLanguage 源语言代码
+ * @param intermediateLanguage 中间语言代码（如英语）
+ * @param targetLanguage 目标语言代码
+ * @param apiUrl 翻译API的URL
+ * @returns 包含所有翻译结果的对象
+ */
+async function multiTranslate(
+  text: string,
+  sourceLanguage: string = 'zh',
+  intermediateLanguage: string = 'en',
+  targetLanguage: string = 'th',
+  apiUrl: string = 'http://127.0.0.1:5000/translate'
+): Promise<{ englishText: string; thaiText: string }> {
+  try {
+    // 先翻译成英文
+    const englishText = await translateText(text, sourceLanguage, intermediateLanguage, apiUrl);
+    
+    // 再从英文翻译成泰文
+    const thaiText = await translateText(englishText, intermediateLanguage, targetLanguage, apiUrl);
+    
+    return {
+      englishText,
+      thaiText
+    };
+  } catch (error) {
+    console.error('多语言翻译出错:', error);
+    throw error;
+  }
+}
+
 // 路由定义
 
 // 优化/model路由
@@ -123,7 +156,6 @@ app.post('/model', async (req, res) => {
   const model = req.body.model || 'large'; // 默认使用large模型
   
   // 翻译相关参数
-  const translateToLanguage = req.body.translateTo || 'en'; // 默认翻译为英文
   const translateApiUrl = req.body.translateApiUrl || 'http://127.0.0.1:5000/translate'; // 使用本地翻译API
 
   // 构建Whisper命令
@@ -154,13 +186,18 @@ app.post('/model', async (req, res) => {
       if (fs.existsSync(txtFilePath)) {
         const transcription = fs.readFileSync(txtFilePath, 'utf8');
         
-        // 翻译转录文本
-        let translatedText = '';
+        // 翻译转录文本（先翻译成英文，再翻译成泰文）
+        let translations = {
+          englishText: '',
+          thaiText: ''
+        };
+        
         try {
-          translatedText = await translateText(
+          translations = await multiTranslate(
             transcription,
             language,
-            translateToLanguage,
+            'en',
+            'th',
             translateApiUrl
           );
         } catch (translateError) {
@@ -171,7 +208,8 @@ app.post('/model', async (req, res) => {
         res.json({ 
           success: true, 
           transcription,
-          translatedText, // 添加翻译后的文本
+          englishText: translations.englishText,
+          thaiText: translations.thaiText,
           audioFile: path.basename(audioFilePath),
           outputFile: path.basename(txtFilePath)
         });

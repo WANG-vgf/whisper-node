@@ -50,29 +50,25 @@ if (!fs.existsSync(publicDir)) {
 /**
  * 翻译文本函数
  * @param text 要翻译的文本
- * @param sourceLanguage 源语言代码
  * @param targetLanguage 目标语言代码
- * @param apiUrl 翻译API的URL
  * @returns 翻译后的文本
  */
 async function translateText(
   text: string, 
-  sourceLanguage: string = 'zh', 
   targetLanguage: string = 'en',
-  apiUrl: string = 'http://127.0.0.1:5000/translate'
 ): Promise<string> {
   try {
-    const response = await fetch(apiUrl, {
+    const response = await fetch('http://127.0.0.1:5000/translate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         q: text,
-        source: sourceLanguage,
+        source: 'auto',
         target: targetLanguage,
         format: 'text',
-        alternatives: 3,
+        alternatives: 6,
         api_key: ''
       })
     });
@@ -92,30 +88,16 @@ async function translateText(
 /**
  * 多语言翻译函数
  * @param text 要翻译的文本
- * @param sourceLanguage 源语言代码
- * @param intermediateLanguage 中间语言代码（如英语）
  * @param targetLanguage 目标语言代码
- * @param apiUrl 翻译API的URL
  * @returns 包含所有翻译结果的对象
  */
 async function multiTranslate(
   text: string,
-  sourceLanguage: string = 'zh',
-  intermediateLanguage: string = 'en',
-  targetLanguage: string = 'th',
-  apiUrl: string = 'http://127.0.0.1:5000/translate'
-): Promise<{ englishText: string; thaiText: string }> {
-  try {
-    // 先翻译成英文
-    const englishText = await translateText(text, sourceLanguage, intermediateLanguage, apiUrl);
-    
-    // 再从英文翻译成泰文
-    const thaiText = await translateText(englishText, intermediateLanguage, targetLanguage, apiUrl);
-    
-    return {
-      englishText,
-      thaiText
-    };
+  targetLanguage: string = 'en',
+): Promise<string[]> {
+  try {  
+    const _text = await translateText(text, targetLanguage);
+    return [_text];
   } catch (error) {
     console.error('多语言翻译出错:', error);
     throw error;
@@ -142,7 +124,7 @@ app.post('/model', async (req, res) => {
     res.write(`${part.message.content}`);
   }
   
-  // res.end();
+  res.end();
 });
 
 // 语音转文本路由
@@ -150,16 +132,15 @@ app.post('/model', async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '未提供音频文件' });
   }
+  
+  console.log(`req.body`, req.body);
 
   const audioFilePath = req.file.path;
-  const language = req.body.language || 'zh'; // 默认中文
+  const language = req.body.language || 'en'; // 默认中文
   const model = req.body.model || 'large'; // 默认使用large模型
   
-  // 翻译相关参数
-  const translateApiUrl = req.body.translateApiUrl || 'http://127.0.0.1:5000/translate'; // 使用本地翻译API
-
   // 构建Whisper命令
-  const command = `whisper "${audioFilePath}" --language ${language} --fp16 False --output_dir ./uploads --output_format txt`;
+  const command = `whisper "${audioFilePath}" --fp16 False --output_dir ./uploads --output_format txt`;
 
   console.log(`执行命令: ${command}`);
 
@@ -187,18 +168,12 @@ app.post('/model', async (req, res) => {
         const transcription = fs.readFileSync(txtFilePath, 'utf8');
         
         // 翻译转录文本（先翻译成英文，再翻译成泰文）
-        let translations = {
-          englishText: '',
-          thaiText: ''
-        };
+        let translations: string[] = [];
         
         try {
           translations = await multiTranslate(
             transcription,
-            language,
-            'en',
-            'th',
-            translateApiUrl
+            language
           );
         } catch (translateError) {
           console.error('翻译失败:', translateError);
@@ -208,10 +183,7 @@ app.post('/model', async (req, res) => {
         res.json({ 
           success: true, 
           transcription,
-          englishText: translations.englishText,
-          thaiText: translations.thaiText,
-          audioFile: path.basename(audioFilePath),
-          outputFile: path.basename(txtFilePath)
+          translations,
         });
       } else {
         res.status(404)

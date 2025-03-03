@@ -40,21 +40,19 @@ if (!fs_1.default.existsSync(publicDir)) {
 /**
  * 翻译文本函数
  * @param text 要翻译的文本
- * @param sourceLanguage 源语言代码
  * @param targetLanguage 目标语言代码
- * @param apiUrl 翻译API的URL
  * @returns 翻译后的文本
  */
-async function translateText(text, sourceLanguage = 'zh', targetLanguage = 'en', apiUrl = 'http://127.0.0.1:5000/translate') {
+async function translateText(text, targetLanguage = 'en') {
     try {
-        const response = await (0, node_fetch_1.default)(apiUrl, {
+        const response = await (0, node_fetch_1.default)('http://127.0.0.1:5000/translate', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 q: text,
-                source: sourceLanguage,
+                source: 'auto',
                 target: targetLanguage,
                 format: 'text',
                 alternatives: 3,
@@ -72,36 +70,50 @@ async function translateText(text, sourceLanguage = 'zh', targetLanguage = 'en',
         throw error;
     }
 }
+/**
+ * 多语言翻译函数
+ * @param text 要翻译的文本
+ * @param targetLanguage 目标语言代码
+ * @returns 包含所有翻译结果的对象
+ */
+async function multiTranslate(text, targetLanguage = 'en') {
+    try {
+        const _text = await translateText(text, targetLanguage);
+        return [_text];
+    }
+    catch (error) {
+        console.error('多语言翻译出错:', error);
+        throw error;
+    }
+}
 // 路由定义
 // 优化/model路由
 app.post('/model', async (req, res) => {
-    const message = req.body.message || '你是谁？'; // 从请求中获取消息
-    const response = await ollama_1.default.chat({ model: 'deepseek-r1:14b', messages: [{ role: 'user', content: message }], stream: true });
+    console.log(`req.body`, req.body);
     // 流式返回内容
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    const message = req.body.message || '你是谁？'; // 从请求中获取消息
+    const response = await ollama_1.default.chat({ model: 'deepseek-r1:14b', messages: [{ role: 'user', content: message }], stream: true });
     for await (const part of response) {
         // 发送每个部分
-        res.write(`data: ${part.message.content}\n\n`);
+        res.write(`${part.message.content}`);
     }
-    // 结束流
-    res.write('event: end\n\n');
-    res.end();
+    // res.end();
 });
 // 语音转文本路由
 app.post('/transcribe', upload.single('file'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: '未提供音频文件' });
     }
+    console.log(`req.body`, req.body);
     const audioFilePath = req.file.path;
-    const language = req.body.language || 'zh'; // 默认中文
+    const language = req.body.language || 'en'; // 默认中文
     const model = req.body.model || 'large'; // 默认使用large模型
-    // 翻译相关参数
-    const translateToLanguage = req.body.translateTo || 'en'; // 默认翻译为英文
-    const translateApiUrl = req.body.translateApiUrl || 'http://127.0.0.1:5000/translate'; // 使用本地翻译API
     // 构建Whisper命令
-    const command = `whisper "${audioFilePath}" --language ${language} --fp16 False --output_dir ./uploads --output_format txt`;
+    const command = `whisper "${audioFilePath}" --model ${model} --fp16 False --output_dir ./uploads --output_format txt`;
     console.log(`执行命令: ${command}`);
     // 执行Whisper命令
     (0, child_process_1.exec)(command, async (error, stdout, stderr) => {
@@ -121,10 +133,10 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
             // 读取转录结果
             if (fs_1.default.existsSync(txtFilePath)) {
                 const transcription = fs_1.default.readFileSync(txtFilePath, 'utf8');
-                // 翻译转录文本
-                let translatedText = '';
+                // 翻译转录文本（先翻译成英文，再翻译成泰文）
+                let translations = [];
                 try {
-                    translatedText = await translateText(transcription, language, translateToLanguage, translateApiUrl);
+                    translations = await multiTranslate(transcription, language);
                 }
                 catch (translateError) {
                     console.error('翻译失败:', translateError);
@@ -133,9 +145,7 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
                 res.json({
                     success: true,
                     transcription,
-                    translatedText, // 添加翻译后的文本
-                    audioFile: path_1.default.basename(audioFilePath),
-                    outputFile: path_1.default.basename(txtFilePath)
+                    translations,
                 });
             }
             else {
@@ -162,19 +172,6 @@ app.post('/transcribe', upload.single('file'), async (req, res) => {
 // 首页路由
 app.get('/', (req, res) => {
     res.send('欢迎访问 Express 服务器！');
-});
-// 用户路由
-app.get('/users', (req, res) => {
-    res.json([
-        { id: 1, name: '张三' },
-        { id: 2, name: '李四' },
-        { id: 3, name: '王五' }
-    ]);
-});
-// 获取单个用户信息
-app.get('/users/:id', (req, res) => {
-    const userId = req.params.id;
-    res.json({ id: userId, name: `用户${userId}` });
 });
 // 启动服务器
 app.listen(port, () => {
